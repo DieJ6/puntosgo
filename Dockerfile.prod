@@ -10,7 +10,7 @@ RUN curl -L https://github.com/DieJ6/puntosgo/archive/refs/heads/main.tar.gz \
     | tar -xz --strip-components=1
 
 # Compilo el binario
-RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/puntosgo ./...
+RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/puntosgo .
 
 # Etapa liviana de runtime
 FROM alpine:latest
