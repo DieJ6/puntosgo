@@ -1,10 +1,10 @@
 module github.com/DieJ6/puntosgo
 
-go 1.22
+go 1.24.0
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
-	github.com/go-playground/validator/v10 v10.28.0
+	github.com/go-playground/validator/v10 v10.27.0
 	github.com/nmarsollier/commongo v0.0.32
 	github.com/streadway/amqp v1.1.0
 	github.com/swaggo/http-swagger v1.3.4
