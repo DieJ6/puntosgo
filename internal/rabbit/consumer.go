@@ -12,7 +12,6 @@ import (
 //     ExchangeName = "puntos_exchange"
 //     QueueName    = "puntos_queue"
 // )
-// Acá solo dejamos la routing key específica de este consumer.
 
 const (
 	RkConsultaCompra = "consulta_compra"
@@ -37,6 +36,21 @@ func NewConsumer(
 }
 
 func (c *Consumer) Start() {
+	// Guardas defensivas para evitar panic por nil
+	if c == nil {
+		return
+	}
+
+	if c.conn == nil {
+		c.log.Error("RabbitMQ connection is nil en Consumer.Start, no se inicia el consumer")
+		return
+	}
+
+	if c.ProcesarCompraUC == nil {
+		c.log.Error("ProcesarCompraUC es nil en Consumer.Start, no se inicia el consumer")
+		return
+	}
+
 	ch, err := c.conn.Channel()
 	if err != nil {
 		c.log.Error(err)
@@ -46,7 +60,7 @@ func (c *Consumer) Start() {
 
 	// Declarar el exchange (por si no está creado)
 	if err := ch.ExchangeDeclare(
-		ExchangeName, // viene de connection.go
+		ExchangeName, // definido en connection.go
 		"direct",
 		true,
 		false,
@@ -60,7 +74,7 @@ func (c *Consumer) Start() {
 
 	// Declarar la cola
 	_, err = ch.QueueDeclare(
-		QueueName, // viene de connection.go
+		QueueName, // definido en connection.go
 		true,
 		false,
 		false,
@@ -87,7 +101,7 @@ func (c *Consumer) Start() {
 	msgs, err := ch.Consume(
 		QueueName,
 		"",
-		false, // auto-ack
+		false, // auto-ack desactivado, hacemos Ack/Nack manual
 		false,
 		false,
 		false,
@@ -110,6 +124,7 @@ func (c *Consumer) Start() {
 			}
 			_ = msg.Ack(false)
 		default:
+			// Mensajes que no nos interesan, los damos por consumidos
 			_ = msg.Ack(false)
 		}
 	}
