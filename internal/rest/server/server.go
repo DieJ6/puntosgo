@@ -1,0 +1,45 @@
+package server
+
+import (
+    "fmt"
+    "log"
+    "net/http"
+
+    "github.com/go-chi/chi/v5"
+    httpSwagger "github.com/swaggo/http-swagger"
+
+    "github.com/tuusuario/puntosgo/internal/rest"
+    "github.com/tuusuario/puntosgo/internal/env"
+    "github.com/tuusuario/puntosgo/internal/di"
+    "github.com/tuusuario/puntosgo/internal/rabbit"
+    "github.com/tuusuario/puntosgo/internal/usecases"
+)
+
+func Start() {
+
+    inj := di.Initialize()
+
+    // ——— Consumer RabbitMQ (consulta_compra) ———
+    procUC := &usecases.ProcesarCompraUC{
+        CategorySrv: inj.CategorySrv,
+        EquivSrv:    inj.EquivSrv,
+        SaldoSrv:    inj.SaldoSrv,
+        MvSrv:       inj.MovSrv,
+        Publisher:   rabbit.NewPublisher(inj.Rabbit, inj.Log),
+    }
+
+    consumer := rabbit.NewConsumer(inj.Rabbit, inj.Log, procUC)
+    go consumer.Start()
+
+    // ——— REST API ———
+    r := chi.NewRouter()
+
+    rest.Router(r, inj)
+
+    r.Get("/swagger/*", httpSwagger.WrapHandler)
+
+    port := env.Get().Port
+    fmt.Println("PuntosGo escuchando en puerto", port)
+
+    log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), r))
+}
