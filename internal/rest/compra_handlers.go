@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/tuusuario/puntosgo/internal/di"
-	"github.com/tuusuario/puntosgo/internal/rabbit"
+	"github.com/DieJ6/puntosgo/internal/di"
+	"github.com/DieJ6/puntosgo/internal/rabbit"
 )
 
 type CompraHandlers struct {

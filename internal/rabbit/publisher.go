@@ -3,19 +3,18 @@ package rabbit
 import (
 	"github.com/nmarsollier/commongo/log"
 	"github.com/streadway/amqp"
-)
 
-type Publisher interface {
-	Publish(routingKey string, body []byte) error
-}
+	"github.com/DieJ6/puntosgo/internal/usecases"
+)
 
 type publisher struct {
 	conn *amqp.Connection
 	log  log.LogRusEntry
 }
 
-func NewPublisher(conn *amqp.Connection, log log.LogRusEntry) Publisher {
-	return &publisher{conn, log}
+// NewPublisher devuelve algo que implementa usecases.Publisher
+func NewPublisher(conn *amqp.Connection, log log.LogRusEntry) usecases.Publisher {
+	return &publisher{conn: conn, log: log}
 }
 
 func (p *publisher) Publish(routingKey string, body []byte) error {

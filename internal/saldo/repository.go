@@ -25,7 +25,7 @@ type repository struct {
 }
 
 func NewRepository(log log.LogRusEntry, c db.Collection) SaldoRepository {
-	return &repository{log, c}
+	return &repository{log: log, collection: c}
 }
 
 func (r *repository) Insert(s *Saldo) (*Saldo, error) {
@@ -34,16 +34,16 @@ func (r *repository) Insert(s *Saldo) (*Saldo, error) {
 		return nil, err
 	}
 
-	s.ID = primitive.NewObjectID()
 	now := time.Now()
+	s.ID = primitive.NewObjectID()
 	s.FechaCreacion = now
 	s.FechaModificacion = now
 
-	_, err := r.collection.InsertOne(context.Background(), s)
-	if err != nil {
+	if _, err := r.collection.InsertOne(context.Background(), s); err != nil {
 		r.log.Error(err)
 		return nil, err
 	}
+
 	return s, nil
 }
 
@@ -59,37 +59,49 @@ func (r *repository) Update(s *Saldo) (*Saldo, error) {
 		context.Background(),
 		bson.M{"_id": s.ID},
 		bson.M{"$set": s},
+		nil, // firma de commongo/db
 	)
+
 	if err != nil {
 		r.log.Error(err)
 		return nil, err
 	}
+
 	return s, nil
 }
 
 func (r *repository) FindLatestByUsuario(uid primitive.ObjectID) (*Saldo, error) {
-	var s Saldo
+	filter := bson.M{"forK_id_usuario": uid}
 
-	opts := db.FindOptions().
-		SetSort(bson.D{{"fechaModificacion", -1}}).
-		SetLimit(1)
-
-	cur, err := r.collection.Find(context.Background(),
-		bson.M{"forK_id_usuario": uid},
-		opts,
-	)
-
+	cur, err := r.collection.Find(context.Background(), filter)
 	if err != nil {
+		r.log.Error(err)
 		return nil, err
 	}
 	defer cur.Close(context.Background())
 
-	if cur.Next(context.Background()) {
-		if err := cur.Decode(&s); err != nil {
+	var latest *Saldo
+	var latestTime time.Time
+
+	for cur.Next(context.Background()) {
+		s := &Saldo{}
+		if err := cur.Decode(s); err != nil {
+			r.log.Error(err)
 			return nil, err
 		}
-		return &s, nil
+
+		refDate := s.FechaModificacion
+		if refDate.IsZero() {
+			refDate = s.FechaCreacion
+		}
+
+		if latest == nil || refDate.After(latestTime) {
+			latest = s
+			latestTime = refDate
+		}
 	}
 
-	return nil, nil // No hay saldo aún
+	// NO existe cur.Err() en commongo/db → simplemente lo omitimos.
+
+	return latest, nil
 }

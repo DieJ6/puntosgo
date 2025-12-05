@@ -8,11 +8,11 @@ import (
     "github.com/go-chi/chi/v5"
     httpSwagger "github.com/swaggo/http-swagger"
 
-    "github.com/tuusuario/puntosgo/internal/rest"
-    "github.com/tuusuario/puntosgo/internal/env"
-    "github.com/tuusuario/puntosgo/internal/di"
-    "github.com/tuusuario/puntosgo/internal/rabbit"
-    "github.com/tuusuario/puntosgo/internal/usecases"
+    "github.com/DieJ6/puntosgo/internal/rest"
+    "github.com/DieJ6/puntosgo/internal/env"
+    "github.com/DieJ6/puntosgo/internal/di"
+    "github.com/DieJ6/puntosgo/internal/rabbit"
+    "github.com/DieJ6/puntosgo/internal/usecases"
 )
 
 func Start() {
@@ -24,7 +24,7 @@ func Start() {
         CategorySrv: inj.CategorySrv,
         EquivSrv:    inj.EquivSrv,
         SaldoSrv:    inj.SaldoSrv,
-        MvSrv:       inj.MovSrv,
+        MvSrv:       inj.MvSrv,
         Publisher:   rabbit.NewPublisher(inj.Rabbit, inj.Log),
     }
 

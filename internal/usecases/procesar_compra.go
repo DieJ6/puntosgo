@@ -4,42 +4,37 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/streadway/amqp"
-
-	"github.com/tuusuario/puntosgo/internal/category"
-	"github.com/tuusuario/puntosgo/internal/equivalencia"
-	"github.com/tuusuario/puntosgo/internal/saldo"
-	"github.com/tuusuario/puntosgo/internal/movimiento"
-	"github.com/tuusuario/puntosgo/internal/rabbit"
+	"github.com/DieJ6/puntosgo/internal/category"
+	"github.com/DieJ6/puntosgo/internal/equivalencia"
+	"github.com/DieJ6/puntosgo/internal/movimiento"
+	"github.com/DieJ6/puntosgo/internal/saldo"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type ProcesarCompraUC struct {
-	CategorySrv  category.Service
-	EquivSrv     equivalencia.Service
-	SaldoSrv     saldo.Service
-	MvSrv        movimiento.Service
-	Publisher    rabbit.Publisher
+	CategorySrv category.Service
+	EquivSrv    equivalencia.Service
+	SaldoSrv    saldo.Service
+	MvSrv       movimiento.Service
+	Publisher   Publisher // interfaz, implementada por rabbit.Publisher
 }
 
 type ConsultaCompraInput struct {
 	OrderID   string `json:"order_id"`
 	UserID    string `json:"user_id"`
 	Productos []struct {
-		ID    string  `json:"id_producto"`
+		ID     string  `json:"id_producto"`
 		Precio float64 `json:"precio"`
 	} `json:"productos"`
 }
 
-type ResultadoCompra struct {
-	OrderID        string  `json:"order_id"`
-	PuntosAplicados int     `json:"puntos_aplicados"`
-	FaltantePesos   float64 `json:"faltante_pesos"`
-}
+// OJO: ResultadoCompra **NO** se declara acá,
+// ya existe en devolver_resultado_compra.go
+// y al estar en el mismo package usecases lo podemos usar directo.
 
-func (uc *ProcesarCompraUC) Consume(msg amqp.Delivery) error {
+func (uc *ProcesarCompraUC) Consume(body []byte) error {
 	var input ConsultaCompraInput
-	if err := json.Unmarshal(msg.Body, &input); err != nil {
+	if err := json.Unmarshal(body, &input); err != nil {
 		return err
 	}
 
@@ -71,52 +66,52 @@ func (uc *ProcesarCompraUC) Consume(msg amqp.Delivery) error {
 	for _, p := range input.Productos {
 		cat, err := uc.CategorySrv.FindByArticulo(p.ID)
 		if err != nil || cat == nil {
-			// si no hay categoría → prioridad infinita
-			evals = append(evals, ProductoEval{p.ID, p.Precio, 999, nil})
+			evals = append(evals, ProductoEval{
+				ID:        p.ID,
+				Precio:    p.Precio,
+				Prioridad: 999,
+				Equiv:     nil,
+			})
 			continue
 		}
 		eq, _ := uc.EquivSrv.GetByID(cat.ForKIdEquivalencia)
-		evals = append(evals, ProductoEval{p.ID, p.Precio, cat.Prioridad, eq})
+		evals = append(evals, ProductoEval{
+			ID:        p.ID,
+			Precio:    p.Precio,
+			Prioridad: cat.Prioridad,
+			Equiv:     eq,
+		})
 	}
 
-	// ordenar por prioridad ascendente
 	sort.Slice(evals, func(i, j int) bool {
 		return evals[i].Prioridad < evals[j].Prioridad
 	})
 
-	// aplicar puntos por producto
-	for _, prod := range evals {
+	for i := 0; i < len(evals); i++ {
+		prod := evals[i]
+
 		if prod.Equiv == nil {
 			faltanteTotal += prod.Precio
 			continue
 		}
 
-		// relación: tantos puntos → tantos pesos
 		valorPorPunto := float64(prod.Equiv.Pesos) / float64(prod.Equiv.Puntos)
-
 		maxDescuento := float64(puntosDisponibles) * valorPorPunto
 
 		if maxDescuento >= prod.Precio {
-			// cubrir totalidad del producto
 			puntosUsados := int(prod.Precio / valorPorPunto)
 			puntosDisponibles -= puntosUsados
 			puntosTotalesAplicados += puntosUsados
 		} else {
-			// cubrir parcialmente
 			puntosUsados := puntosDisponibles
 			puntosTotalesAplicados += puntosUsados
 			puntosDisponibles = 0
-
 			faltanteTotal += prod.Precio - maxDescuento
 		}
 
 		if puntosDisponibles <= 0 {
-			// todos los productos restantes se suman al faltante
-			for _, rest := range evals {
-				if rest.ID == prod.ID {
-					continue
-				}
-				faltanteTotal += rest.Precio
+			for j := i + 1; j < len(evals); j++ {
+				faltanteTotal += evals[j].Precio
 			}
 			break
 		}
@@ -126,19 +121,19 @@ func (uc *ProcesarCompraUC) Consume(msg amqp.Delivery) error {
 	s.Monto = puntosDisponibles
 	uc.SaldoSrv.ActualizarSaldo(s)
 
-	// registrar movimiento
+	// registrar movimiento de salida de puntos
 	_, _ = uc.MvSrv.Registrar(&movimiento.Movimiento{
 		Monto:         -puntosTotalesAplicados,
 		ForKIdUsuario: uid,
 	})
 
-	// enviar respuesta
+	// usamos la struct ResultadoCompra definida en devolver_resultado_compra.go
 	result := ResultadoCompra{
-		OrderID:        input.OrderID,
+		OrderID:         input.OrderID,
 		PuntosAplicados: puntosTotalesAplicados,
 		FaltantePesos:   faltanteTotal,
 	}
 
-	body, _ := json.Marshal(result)
-	return uc.Publisher.Publish("informacion_compra", body)
+	responseBody, _ := json.Marshal(result)
+	return uc.Publisher.Publish("informacion_compra", responseBody)
 }

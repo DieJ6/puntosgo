@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/tuusuario/puntosgo/internal/di"
-	"github.com/tuusuario/puntosgo/internal/token"
-	"github.com/tuusuario/puntosgo/internal/usecases"
+	"github.com/DieJ6/puntosgo/internal/di"
+	"github.com/DieJ6/puntosgo/internal/token"
+	"github.com/DieJ6/puntosgo/internal/usecases"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 

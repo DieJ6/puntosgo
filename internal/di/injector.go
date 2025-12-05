@@ -1,93 +1,88 @@
 package di
 
 import (
-    "github.com/nmarsollier/commongo/log"
-    "github.com/nmarsollier/commongo/db"
-    "github.com/streadway/amqp"
+	"github.com/streadway/amqp"
 
-    "github.com/tuusuario/puntosgo/internal/env"
+	"github.com/nmarsollier/commongo/db"
+	"github.com/nmarsollier/commongo/log"
 
-    "github.com/tuusuario/puntosgo/internal/category"
-    "github.com/tuusuario/puntosgo/internal/equivalencia"
-    "github.com/tuusuario/puntosgo/internal/movimiento"
-    "github.com/tuusuario/puntosgo/internal/saldo"
-    "github.com/tuusuario/puntosgo/internal/rabbit"
+	"github.com/DieJ6/puntosgo/internal/category"
+	"github.com/DieJ6/puntosgo/internal/env"
+	"github.com/DieJ6/puntosgo/internal/equivalencia"
+	"github.com/DieJ6/puntosgo/internal/movimiento"
+	"github.com/DieJ6/puntosgo/internal/rabbit"
+	"github.com/DieJ6/puntosgo/internal/saldo"
 )
 
 type Injector struct {
-    Log       log.LogRusEntry
-    DB        db.Database
-    Rabbit    *amqp.Connection
+	Log    log.LogRusEntry
+	Rabbit *amqp.Connection
 
-    CategoryRepo category.CategoryRepository
-    EquivRepo    equivalencia.EquivalenciaRepository
-    MovRepo      movimiento.MovimientoRepository
-    SaldoRepo    saldo.SaldoRepository
+	CategoryRepo category.CategoryRepository
+	EquivRepo    equivalencia.EquivalenciaRepository
+	MvRepo       movimiento.MovimientoRepository
+	SaldoRepo    saldo.SaldoRepository
 
-    CategorySrv category.Service
-    EquivSrv    equivalencia.Service
-    MovSrv      movimiento.Service
-    SaldoSrv    saldo.Service
+	CategorySrv category.Service
+	EquivSrv    equivalencia.Service
+	MvSrv       movimiento.Service
+	SaldoSrv    saldo.Service
 }
 
 var injector *Injector
 
 func Initialize() *Injector {
-    if injector != nil {
-        return injector
-    }
+	if injector != nil {
+		return injector
+	}
 
-    logger := log.New()
+	// Logger "cero valor": commongo/log no expone log.New(),
+	// pero el tipo LogRusEntry se puede usar en blanco.
+	var logger log.LogRusEntry
 
-    mongo, err := db.NewMongoDatabase(env.Get().MongoURL)
-    if err != nil {
-        logger.Fatal(err)
-    }
+	// Conexión a RabbitMQ
+	conn, err := amqp.Dial(env.Get().RabbitURL)
+	if err != nil {
+		panic(err)
+	}
 
-    conn, err := amqp.Dial(env.Get().RabbitURL)
-    if err != nil {
-        logger.Fatal(err)
-    }
+	// Declaramos exchange + queue según nuestra config de Rabbit
+	if err := rabbit.Setup(conn); err != nil {
+		panic(err)
+	}
 
-    // declaramos exchange + queue
-    rabbit.Setup(conn)
+	// Por ahora NO cableamos Mongo real:
+	// usamos nil como db.Collection tipado, solo para que compile.
+	var nilCollection db.Collection = nil
 
-    // repos
-    catCol := mongo.Collection("categorias")
-    eqCol  := mongo.Collection("equivalencias")
-    mvCol  := mongo.Collection("movimientos")
-    sldCol := mongo.Collection("saldos")
+	catRepo := category.NewRepository(logger, nilCollection)
+	eqRepo := equivalencia.NewRepository(logger, nilCollection)
+	mvRepo := movimiento.NewRepository(logger, nilCollection)
+	sldRepo := saldo.NewRepository(logger, nilCollection)
 
-    catRepo := category.NewRepository(logger, catCol)
-    eqRepo  := equivalencia.NewRepository(logger, eqCol)
-    mvRepo  := movimiento.NewRepository(logger, mvCol)
-    sldRepo := saldo.NewRepository(logger, sldCol)
+	catSrv := category.NewService(catRepo)
+	eqSrv := equivalencia.NewService(eqRepo)
+	mvSrv := movimiento.NewService(mvRepo)
+	sldSrv := saldo.NewService(sldRepo)
 
-    // services
-    catSrv := category.NewService(catRepo)
-    eqSrv  := equivalencia.NewService(eqRepo)
-    mvSrv  := movimiento.NewService(mvRepo)
-    sldSrv := saldo.NewService(sldRepo)
+	injector = &Injector{
+		Log:    logger,
+		Rabbit: conn,
 
-    injector = &Injector{
-        Log:       logger,
-        DB:        mongo,
-        Rabbit:    conn,
+		CategoryRepo: catRepo,
+		EquivRepo:    eqRepo,
+		MvRepo:       mvRepo,
+		SaldoRepo:    sldRepo,
 
-        CategoryRepo: catRepo,
-        EquivRepo:    eqRepo,
-        MovRepo:      mvRepo,
-        SaldoRepo:    sldRepo,
+		CategorySrv: catSrv,
+		EquivSrv:    eqSrv,
+		MvSrv:       mvSrv,
+		SaldoSrv:    sldSrv,
+	}
 
-        CategorySrv: catSrv,
-        EquivSrv:    eqSrv,
-        MovSrv:      mvSrv,
-        SaldoSrv:    sldSrv,
-    }
-
-    return injector
+	return injector
 }
 
 func Get() *Injector {
-    return injector
+	return injector
 }

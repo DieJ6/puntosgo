@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/tuusuario/puntosgo/internal/category"
+	"github.com/DieJ6/puntosgo/internal/category"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 

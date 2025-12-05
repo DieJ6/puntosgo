@@ -2,7 +2,7 @@ package rest
 
 import (
     "github.com/go-chi/chi/v5"
-    "github.com/tuusuario/puntosgo/internal/di"
+    "github.com/DieJ6/puntosgo/internal/di"
 )
 
 func Router(r chi.Router, inj *di.Injector) {

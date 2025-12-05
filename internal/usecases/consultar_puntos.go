@@ -3,8 +3,8 @@ package usecases
 import (
 	"time"
 
-	"github.com/tuusuario/puntosgo/internal/movimiento"
-	"github.com/tuusuario/puntosgo/internal/saldo"
+	"github.com/DieJ6/puntosgo/internal/movimiento"
+	"github.com/DieJ6/puntosgo/internal/saldo"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 

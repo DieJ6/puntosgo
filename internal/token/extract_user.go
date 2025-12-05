@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tuusuario/puntosgo/internal/env"
+	"github.com/DieJ6/puntosgo/internal/env"
 )
 
 type authUserResponse struct {

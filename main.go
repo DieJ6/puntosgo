@@ -1,6 +1,6 @@
 package main
 
-import "github.com/tuusuario/puntosgo/internal/rest/server"
+import "github.com/DieJ6/puntosgo/internal/rest/server"
 
 func main() {
     server.Start()

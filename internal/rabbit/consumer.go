@@ -1,72 +1,116 @@
 package rabbit
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/nmarsollier/commongo/log"
 	"github.com/streadway/amqp"
 
-	"github.com/tuusuario/puntosgo/internal/usecases"
+	"github.com/DieJ6/puntosgo/internal/usecases"
+)
+
+// Estas constantes ya están en connection.go:
+// const (
+//     ExchangeName = "puntos_exchange"
+//     QueueName    = "puntos_queue"
+// )
+// Acá solo dejamos la routing key específica de este consumer.
+
+const (
+	RkConsultaCompra = "consulta_compra"
 )
 
 type Consumer struct {
-	Conn             *amqp.Connection
-	Log              log.LogRusEntry
+	conn             *amqp.Connection
+	log              log.LogRusEntry
 	ProcesarCompraUC *usecases.ProcesarCompraUC
 }
 
-func NewConsumer(conn *amqp.Connection, log log.LogRusEntry, uc *usecases.ProcesarCompraUC) *Consumer {
-	return &Consumer{conn, log, uc}
+func NewConsumer(
+	conn *amqp.Connection,
+	log log.LogRusEntry,
+	procesarUC *usecases.ProcesarCompraUC,
+) *Consumer {
+	return &Consumer{
+		conn:             conn,
+		log:              log,
+		ProcesarCompraUC: procesarUC,
+	}
 }
 
-func (c *Consumer) Start() error {
-	ch, err := c.Conn.Channel()
+func (c *Consumer) Start() {
+	ch, err := c.conn.Channel()
 	if err != nil {
-		return err
+		c.log.Error(err)
+		return
+	}
+	defer ch.Close()
+
+	// Declarar el exchange (por si no está creado)
+	if err := ch.ExchangeDeclare(
+		ExchangeName, // viene de connection.go
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		c.log.Error(err)
+		return
 	}
 
-	err = ch.Qos(1, 0, false)
-	if err != nil {
-		return err
-	}
-
-	msgs, err := ch.Consume(
-		QueueName,
-		"",
-		false, // manual ack
+	// Declarar la cola
+	_, err = ch.QueueDeclare(
+		QueueName, // viene de connection.go
+		true,
 		false,
 		false,
 		false,
 		nil,
 	)
 	if err != nil {
-		return err
+		c.log.Error(err)
+		return
 	}
 
-	go func() {
-		for msg := range msgs {
+	// Bind cola ↔ routing key
+	if err := ch.QueueBind(
+		QueueName,
+		RkConsultaCompra,
+		ExchangeName,
+		false,
+		nil,
+	); err != nil {
+		c.log.Error(err)
+		return
+	}
 
-			rk := msg.RoutingKey
-			c.Log.Infof("Mensaje recibido: %s", rk)
+	msgs, err := ch.Consume(
+		QueueName,
+		"",
+		false, // auto-ack
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		c.log.Error(err)
+		return
+	}
 
-			if rk == "consulta_compra" {
+	c.log.Info("Rabbit consumer de puntosgo iniciado y escuchando consulta_compra")
 
-				if err := c.ProcesarCompraUC.Consume(msg); err != nil {
-					c.Log.Error("Error procesando compra: ", err)
-					msg.Nack(false, true)
-					continue
-				}
-
-				msg.Ack(false)
+	for msg := range msgs {
+		switch msg.RoutingKey {
+		case RkConsultaCompra:
+			if err := c.ProcesarCompraUC.Consume(msg.Body); err != nil {
+				c.log.Error(err)
+				_ = msg.Nack(false, false)
 				continue
 			}
-
-			// otros routing keys podrían manejarse aquí
-			msg.Ack(false)
+			_ = msg.Ack(false)
+		default:
+			_ = msg.Ack(false)
 		}
-	}()
-
-	fmt.Println("Consumer RabbitMQ iniciado.")
-	return nil
+	}
 }

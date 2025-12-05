@@ -2,7 +2,6 @@ package category
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -63,6 +62,7 @@ func (r *categoryRepository) Update(cat *Category) (*Category, error) {
 		context.Background(),
 		bson.M{"_id": cat.ID},
 		bson.M{"$set": cat},
+		nil,
 	)
 	if err != nil {
 		r.log.Error(err)
@@ -100,6 +100,7 @@ func (r *categoryRepository) AddArticulo(catID primitive.ObjectID, productID str
 		context.Background(),
 		bson.M{"_id": catID},
 		bson.M{"$addToSet": bson.M{"articulos": productID}},
+		nil,
 	)
 	if err != nil {
 		r.log.Error(err)
@@ -113,6 +114,7 @@ func (r *categoryRepository) RemoveArticulo(catID primitive.ObjectID, productID 
 		context.Background(),
 		bson.M{"_id": catID},
 		bson.M{"$pull": bson.M{"articulos": productID}},
+		nil,
 	)
 	if err != nil {
 		r.log.Error(err)

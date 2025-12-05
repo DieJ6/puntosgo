@@ -1,7 +1,7 @@
 package usecases
 
 import (
-	"github.com/tuusuario/puntosgo/internal/movimiento"
+	"github.com/DieJ6/puntosgo/internal/movimiento"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
