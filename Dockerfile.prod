@@ -1,19 +1,23 @@
-FROM golang:1.22 AS builder
+# Etapa de build
+FROM golang:1.22-bullseye AS builder
 
-WORKDIR /app
+WORKDIR /go/src/github.com/DieJ6/puntosgo
 
-COPY go.mod go.sum ./
-RUN go mod download
+# Descargo el código fuente desde GitHub (rama main)
+RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY . .
+RUN curl -L https://github.com/DieJ6/puntosgo/archive/refs/heads/main.tar.gz \
+    | tar -xz --strip-components=1
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o puntosgo .
+# Compilo el binario
+RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/puntosgo ./...
 
+# Etapa liviana de runtime
 FROM alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/puntosgo .
+COPY --from=builder /go/bin/puntosgo .
 
 EXPOSE 3006
 
