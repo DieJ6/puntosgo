@@ -1,131 +1,144 @@
+// internal/rabbit/consumer.go
 package rabbit
 
 import (
-	"github.com/nmarsollier/commongo/log"
-	"github.com/streadway/amqp"
+    "fmt"
 
-	"github.com/DieJ6/puntosgo/internal/usecases"
+    "github.com/nmarsollier/commongo/log"
+    "github.com/streadway/amqp"
+
+    "github.com/DieJ6/puntosgo/internal/usecases"
 )
 
-// Estas constantes ya están en connection.go:
-// const (
-//     ExchangeName = "puntos_exchange"
-//     QueueName    = "puntos_queue"
-// )
-
 const (
-	RkConsultaCompra = "consulta_compra"
+    RkConsultaCompra = "consulta_compra"
 )
 
 type Consumer struct {
-	conn             *amqp.Connection
-	log              log.LogRusEntry
-	ProcesarCompraUC *usecases.ProcesarCompraUC
+    conn             *amqp.Connection
+    log              log.LogRusEntry // lo dejamos, pero no lo usamos por ahora
+    ProcesarCompraUC *usecases.ProcesarCompraUC
 }
 
 func NewConsumer(
-	conn *amqp.Connection,
-	log log.LogRusEntry,
-	procesarUC *usecases.ProcesarCompraUC,
+    conn *amqp.Connection,
+    logger log.LogRusEntry,
+    procesarUC *usecases.ProcesarCompraUC,
 ) *Consumer {
-	return &Consumer{
-		conn:             conn,
-		log:              log,
-		ProcesarCompraUC: procesarUC,
-	}
+    return &Consumer{
+        conn:             conn,
+        log:              logger,
+        ProcesarCompraUC: procesarUC,
+    }
 }
 
 func (c *Consumer) Start() {
-	// Guardas defensivas para evitar panic por nil
-	if c == nil {
-		return
-	}
+    // ====== chequeos defensivos ======
+    if c == nil {
+        fmt.Println("rabbit consumer: instancia nil, no se inicia el consumer")
+        return
+    }
+    if c.conn == nil {
+        fmt.Println("rabbit consumer: conexión AMQP nil, no se inicia el consumer")
+        return
+    }
+    if c.ProcesarCompraUC == nil {
+        fmt.Println("rabbit consumer: ProcesarCompraUC es nil, no se inicia el consumer")
+        return
+    }
 
-	if c.conn == nil {
-		c.log.Error("RabbitMQ connection is nil en Consumer.Start, no se inicia el consumer")
-		return
-	}
+    // Recover general del consumer, PERO SIN USAR c.log
+    defer func() {
+        if r := recover(); r != nil {
+            fmt.Println("panic en Rabbit Consumer.Start:", r)
+        }
+    }()
 
-	if c.ProcesarCompraUC == nil {
-		c.log.Error("ProcesarCompraUC es nil en Consumer.Start, no se inicia el consumer")
-		return
-	}
+    ch, err := c.conn.Channel()
+    if err != nil {
+        fmt.Println("rabbit consumer: error al abrir canal:", err)
+        return
+    }
+    defer ch.Close()
 
-	ch, err := c.conn.Channel()
-	if err != nil {
-		c.log.Error(err)
-		return
-	}
-	defer ch.Close()
+    // Declarar exchange
+    if err := ch.ExchangeDeclare(
+        ExchangeName,
+        "direct",
+        true,
+        false,
+        false,
+        false,
+        nil,
+    ); err != nil {
+        fmt.Println("rabbit consumer: error ExchangeDeclare:", err)
+        return
+    }
 
-	// Declarar el exchange (por si no está creado)
-	if err := ch.ExchangeDeclare(
-		ExchangeName, // definido en connection.go
-		"direct",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	); err != nil {
-		c.log.Error(err)
-		return
-	}
+    // Declarar cola
+    _, err = ch.QueueDeclare(
+        QueueName,
+        true,
+        false,
+        false,
+        false,
+        nil,
+    )
+    if err != nil {
+        fmt.Println("rabbit consumer: error QueueDeclare:", err)
+        return
+    }
 
-	// Declarar la cola
-	_, err = ch.QueueDeclare(
-		QueueName, // definido en connection.go
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		c.log.Error(err)
-		return
-	}
+    // Bind cola ↔ routing key
+    if err := ch.QueueBind(
+        QueueName,
+        RkConsultaCompra,
+        ExchangeName,
+        false,
+        nil,
+    ); err != nil {
+        fmt.Println("rabbit consumer: error QueueBind:", err)
+        return
+    }
 
-	// Bind cola ↔ routing key
-	if err := ch.QueueBind(
-		QueueName,
-		RkConsultaCompra,
-		ExchangeName,
-		false,
-		nil,
-	); err != nil {
-		c.log.Error(err)
-		return
-	}
+    msgs, err := ch.Consume(
+        QueueName,
+        "",
+        false, // manual ack
+        false,
+        false,
+        false,
+        nil,
+    )
+    if err != nil {
+        fmt.Println("rabbit consumer: error Consume:", err)
+        return
+    }
 
-	msgs, err := ch.Consume(
-		QueueName,
-		"",
-		false, // auto-ack desactivado, hacemos Ack/Nack manual
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		c.log.Error(err)
-		return
-	}
+    fmt.Println("Rabbit consumer de puntosgo iniciado y escuchando consulta_compra")
 
-	c.log.Info("Rabbit consumer de puntosgo iniciado y escuchando consulta_compra")
+    for msg := range msgs {
+        // Aislamos el procesamiento de cada mensaje con un recover
+        func(m amqp.Delivery) {
+            defer func() {
+                if r := recover(); r != nil {
+                    fmt.Println("panic procesando mensaje:", r)
+                    _ = m.Nack(false, false)
+                }
+            }()
 
-	for msg := range msgs {
-		switch msg.RoutingKey {
-		case RkConsultaCompra:
-			if err := c.ProcesarCompraUC.Consume(msg.Body); err != nil {
-				c.log.Error(err)
-				_ = msg.Nack(false, false)
-				continue
-			}
-			_ = msg.Ack(false)
-		default:
-			// Mensajes que no nos interesan, los damos por consumidos
-			_ = msg.Ack(false)
-		}
-	}
+            switch m.RoutingKey {
+            case RkConsultaCompra:
+                if err := c.ProcesarCompraUC.Consume(m.Body); err != nil {
+                    fmt.Println("error en ProcesarCompraUC.Consume:", err)
+                    _ = m.Nack(false, false)
+                    return
+                }
+                _ = m.Ack(false)
+            default:
+                // Si llega otra routing key, simplemente la ACKeamos
+                _ = m.Ack(false)
+            }
+        }(msg)
+    }
 }
