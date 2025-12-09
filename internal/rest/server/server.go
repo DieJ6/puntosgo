@@ -28,7 +28,12 @@ func Start() {
         Publisher:   rabbit.NewPublisher(inj.Rabbit, inj.Log),
     }
 
-    consumer := rabbit.NewConsumer(inj.Rabbit, inj.Log, procUC)
+    regUC := &usecases.RegistrarCompraUC{
+        SaldoSrv: inj.SaldoSrv,
+        MvSrv:    inj.MvSrv,
+    }
+
+    consumer := rabbit.NewConsumer(inj.Rabbit, inj.Log, procUC, regUC)
     go consumer.Start()
 
     // ——— REST API ———

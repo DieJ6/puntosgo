@@ -12,6 +12,7 @@ import (
 
 const (
     RkConsultaCompra = "consulta_compra"
+    RkRegistrarCompra  = "registrar_compra"
 )
 
 type Consumer struct {
@@ -135,6 +136,20 @@ func (c *Consumer) Start() {
                     return
                 }
                 _ = m.Ack(false)
+            case RkRegistrarCompra:
+                var input usecases.RegistrarCompraInput
+                if err := json.Unmarshal(m.Body, &input); err != nil {
+                    c.log.Error(err)
+                    m.Nack(false, false)
+                    return
+                }
+
+                if err := c.RegistrarCompraUC.Ejecutar(input); err != nil {
+                    c.log.Error(err)
+                    m.Nack(false, false)
+                    return
+                }
+                m.Ack(false)
             default:
                 // Si llega otra routing key, simplemente la ACKeamos
                 _ = m.Ack(false)
