@@ -34,7 +34,7 @@ type Injector struct {
 
 var injector *Injector
 
-// pequeño helper para reintentar la conexión a RabbitMQ
+// helper para reintentar la conexión a RabbitMQ
 func dialRabbitWithRetry(url string, attempts int, delay time.Duration) *amqp.Connection {
 	var conn *amqp.Connection
 	var err error
@@ -49,7 +49,7 @@ func dialRabbitWithRetry(url string, attempts int, delay time.Duration) *amqp.Co
 		time.Sleep(delay)
 	}
 
-	// último intento, si falla, panic como antes
+	// último intento: si falla, panic igual que antes
 	conn, err = amqp.Dial(url)
 	if err != nil {
 		panic(err)
@@ -62,29 +62,37 @@ func Initialize() *Injector {
 		return injector
 	}
 
-	// Logger "cero valor" (commongo/log no expone un constructor público simple)
+	// Logger "cero valor"
 	var logger log.LogRusEntry
 
-	// Conexión a RabbitMQ con reintentos
-	rabbitURL := env.Get().RabbitURL
-	conn := dialRabbitWithRetry(rabbitURL, 10, 5*time.Second)
+	// ==== RabbitMQ con reintentos ====
+	cfg := env.Get()
+
+	conn := dialRabbitWithRetry(cfg.RabbitURL, 10, 5*time.Second)
 
 	// Declaramos exchange + queue según nuestra configuración
 	if err := rabbit.Setup(conn); err != nil {
 		panic(err)
 	}
 
-	// OJO: por ahora NO cableamos Mongo real.
-	// Usamos un db.Collection nil tipado solo para que compile.
-	var nilCollection db.Collection = nil
+	// ==== MongoDB (commongo/db) ====
+	// Usamos la misma base que el resto de los microservicios (ej: "ecommerce")
+	// Si tu profe usa otro nombre de DB, poné ese.
+	mongoDB := db.NewMongo(cfg.MongoURL, "ecommerce")
 
-	// Repos (todavía apuntando a un collection nil)
-	catRepo := category.NewRepository(logger, nilCollection)
-	eqRepo := equivalencia.NewRepository(logger, nilCollection)
-	mvRepo := movimiento.NewRepository(logger, nilCollection)
-	sldRepo := saldo.NewRepository(logger, nilCollection)
+	// Acá ya tenemos db.Collection reales:
+	catCol := mongoDB.Collection("categorias")
+	eqCol := mongoDB.Collection("equivalencias")
+	mvCol := mongoDB.Collection("movimientos")
+	sldCol := mongoDB.Collection("saldos")
 
-	// Servicios
+	// ==== Repositorios ====
+	catRepo := category.NewRepository(logger, catCol)
+	eqRepo := equivalencia.NewRepository(logger, eqCol)
+	mvRepo := movimiento.NewRepository(logger, mvCol)
+	sldRepo := saldo.NewRepository(logger, sldCol)
+
+	// ==== Servicios ====
 	catSrv := category.NewService(catRepo)
 	eqSrv := equivalencia.NewService(eqRepo)
 	mvSrv := movimiento.NewService(mvRepo)
