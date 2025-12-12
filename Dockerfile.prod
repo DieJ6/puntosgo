@@ -20,7 +20,7 @@ WORKDIR /app
 COPY --from=builder /go/bin/puntosgo .
 
 # 🔹 Variables de entorno (igual que los otros microservicios)
-ENV MONGO_URL=mongodb://host.docker.internal:27017
+ENV MONGO_URL=mongodb://ec-mongo:27017
 
 # Si quisieras también podrías fijar RABBIT_URL acá si no lo maneja docker-compose:
 # ENV RABBIT_URL=amqp://guest:guest@ec-rabbitmq:5672/

@@ -17,24 +17,34 @@ type RegistrarCompraInput struct {
 	Monto  float64 `json:"monto"` // precio total de la compra
 }
 
-// Regla ejemplo: 10 pesos = 1 punto  (podés cambiarla)
+// Regla ejemplo: 10 pesos = 1 punto
 const PESOS_POR_PUNTO = 10.0
 
 func (uc *RegistrarCompraUC) Ejecutar(input RegistrarCompraInput) error {
-	uid, _ := primitive.ObjectIDFromHex(input.UserID)
+	uid, err := primitive.ObjectIDFromHex(input.UserID)
+	if err != nil {
+		return err
+	}
 
 	// cálculo de puntos por compra
 	puntos := int(input.Monto / PESOS_POR_PUNTO)
 
 	// obtener o crear saldo
 	s, err := uc.SaldoSrv.GetSaldoActual(uid)
+	if err != nil {
+		return err
+	}
 	if s == nil {
-		s, _ = uc.SaldoSrv.CrearSaldoInicial(uid)
+		s, err = uc.SaldoSrv.CrearSaldoInicial(uid)
+		if err != nil {
+			return err
+		}
 	}
 
 	// sumar puntos
 	s.Monto += puntos
-	if err := uc.SaldoSrv.ActualizarSaldo(s); err != nil {
+	_, err = uc.SaldoSrv.ActualizarSaldo(s)
+	if err != nil {
 		return err
 	}
 
