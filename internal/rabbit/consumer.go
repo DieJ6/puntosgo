@@ -1,13 +1,16 @@
-// internal/rabbit/consumer.go
 package rabbit
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
-	"github.com/DieJ6/puntosgo/internal/usecases"
 	"github.com/nmarsollier/commongo/log"
 	"github.com/streadway/amqp"
+
+	"github.com/DieJ6/puntosgo/internal/usecases"
 )
 
 const (
@@ -17,8 +20,8 @@ const (
 
 type Consumer struct {
 	conn             *amqp.Connection
-	log              log.LogRusEntry // lo dejamos, pero no lo usamos por ahora
-	ProcesarCompraUC *usecases.ProcesarCompraUC
+	log              log.LogRusEntry // lo dejamos pero NO lo usamos (puede ser nil)
+	ProcesarCompraUC  *usecases.ProcesarCompraUC
 	RegistrarCompraUC *usecases.RegistrarCompraUC
 }
 
@@ -29,33 +32,23 @@ func NewConsumer(
 	registrarUC *usecases.RegistrarCompraUC,
 ) *Consumer {
 	return &Consumer{
-		conn:              conn,
-		log:               logger,
+		conn:             conn,
+		log:              logger,
 		ProcesarCompraUC:  procesarUC,
 		RegistrarCompraUC: registrarUC,
 	}
 }
 
 func (c *Consumer) Start() {
-	// ====== chequeos defensivos ======
-	if c == nil {
-		fmt.Println("rabbit consumer: instancia nil, no se inicia el consumer")
+	if c == nil || c.conn == nil {
+		fmt.Println("rabbit consumer: instancia o conexión nil, no se inicia")
 		return
 	}
-	if c.conn == nil {
-		fmt.Println("rabbit consumer: conexión AMQP nil, no se inicia el consumer")
-		return
-	}
-	if c.ProcesarCompraUC == nil {
-		fmt.Println("rabbit consumer: ProcesarCompraUC es nil, no se inicia el consumer")
-		return
-	}
-	if c.RegistrarCompraUC == nil {
-		fmt.Println("rabbit consumer: RegistrarCompraUC es nil, no se inicia el consumer")
+	if c.ProcesarCompraUC == nil || c.RegistrarCompraUC == nil {
+		fmt.Println("rabbit consumer: UCs nil, no se inicia")
 		return
 	}
 
-	// Recover general del consumer
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("panic en Rabbit Consumer.Start:", r)
@@ -69,85 +62,43 @@ func (c *Consumer) Start() {
 	}
 	defer ch.Close()
 
-	// Declarar exchange
-	if err := ch.ExchangeDeclare(
-		ExchangeName,
-		"direct",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	); err != nil {
+	// Exchange + Queue (por si rabbit.Setup no lo dejó listo)
+	if err := ch.ExchangeDeclare(ExchangeName, "direct", true, false, false, false, nil); err != nil {
 		fmt.Println("rabbit consumer: error ExchangeDeclare:", err)
 		return
 	}
-
-	// Declarar cola
-	_, err = ch.QueueDeclare(
-		QueueName,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
+	if _, err := ch.QueueDeclare(QueueName, true, false, false, false, nil); err != nil {
 		fmt.Println("rabbit consumer: error QueueDeclare:", err)
 		return
 	}
 
-	// Bind cola ↔ routing key (consulta_compra)
-	if err := ch.QueueBind(
-		QueueName,
-		RkConsultaCompra,
-		ExchangeName,
-		false,
-		nil,
-	); err != nil {
-		fmt.Println("rabbit consumer: error QueueBind (consulta_compra):", err)
-		return
+	// Bind ambas routing keys (UNA SOLA VEZ)
+	for _, rk := range []string{RkConsultaCompra, RkRegistrarCompra} {
+		if err := ch.QueueBind(QueueName, rk, ExchangeName, false, nil); err != nil {
+			fmt.Println("rabbit consumer: error QueueBind:", rk, err)
+			return
+		}
 	}
 
-	// Bind cola ↔ routing key (registrar_compra)
-	if err := ch.QueueBind(
-		QueueName,
-		RkRegistrarCompra,
-		ExchangeName,
-		false,
-		nil,
-	); err != nil {
-		fmt.Println("rabbit consumer: error QueueBind (registrar_compra):", err)
-		return
-	}
-
-	msgs, err := ch.Consume(
-		QueueName,
-		"",
-		false, // manual ack
-		false,
-		false,
-		false,
-		nil,
-	)
+	msgs, err := ch.Consume(QueueName, "", false, false, false, false, nil)
 	if err != nil {
 		fmt.Println("rabbit consumer: error Consume:", err)
 		return
 	}
 
-	fmt.Println("Rabbit consumer de puntosgo iniciado y escuchando:", RkConsultaCompra, "y", RkRegistrarCompra)
+	fmt.Println("Rabbit consumer de puntosgo iniciado y escuchando: consulta_compra y registrar_compra")
 
 	for msg := range msgs {
-		// Aislamos el procesamiento de cada mensaje con un recover
 		func(m amqp.Delivery) {
 			defer func() {
 				if r := recover(); r != nil {
 					fmt.Println("panic procesando mensaje:", r)
-					_ = m.Nack(false, false)
+					_ = m.Nack(false, false) // descartar (no requeue)
 				}
 			}()
 
 			switch m.RoutingKey {
+
 			case RkConsultaCompra:
 				if err := c.ProcesarCompraUC.Consume(m.Body); err != nil {
 					fmt.Println("error en ProcesarCompraUC.Consume:", err)
@@ -157,15 +108,27 @@ func (c *Consumer) Start() {
 				_ = m.Ack(false)
 
 			case RkRegistrarCompra:
-				var input usecases.RegistrarCompraInput
-				if err := json.Unmarshal(m.Body, &input); err != nil {
-					fmt.Println("error json.Unmarshal RegistrarCompraInput:", err)
+				input, err := decodeRegistrarCompraInput(m.Body)
+				if err != nil {
+					fmt.Println("error decode registrar_compra:", err)
 					_ = m.Nack(false, false)
 					return
 				}
 
-				if err := c.RegistrarCompraUC.Ejecutar(input); err != nil {
-					fmt.Println("error en RegistrarCompraUC.Ejecutar:", err)
+				// Validación mínima defensiva
+				if strings.TrimSpace(input.UserID) == "" {
+					fmt.Println("registrar_compra: user_id vacío")
+					_ = m.Nack(false, false)
+					return
+				}
+				if input.Monto <= 0 {
+					fmt.Println("registrar_compra: monto inválido")
+					_ = m.Nack(false, false)
+					return
+				}
+
+				if err := c.RegistrarCompraUC.Ejecutar(*input); err != nil {
+					fmt.Println("error RegistrarCompraUC.Ejecutar:", err)
 					_ = m.Nack(false, false)
 					return
 				}
@@ -177,4 +140,40 @@ func (c *Consumer) Start() {
 			}
 		}(msg)
 	}
+}
+
+// Acepta body como JSON objeto o como JSON string que contiene un objeto.
+// También tolera que el string interno tenga saltos de línea reales (caso del error '\n' in string literal).
+func decodeRegistrarCompraInput(body []byte) (*usecases.RegistrarCompraInput, error) {
+	b := bytes.TrimSpace(body)
+	if len(b) == 0 {
+		return nil, errors.New("body vacío")
+	}
+
+	// 1) Intento directo: { "user_id": "...", "monto": 1200 }
+	var in usecases.RegistrarCompraInput
+	if err := json.Unmarshal(b, &in); err == nil {
+		return &in, nil
+	}
+
+	// 2) Fallback: el body viene como string: "{\"user_id\":\"...\",\"monto\":1200}"
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return nil, err
+	}
+
+	// Si dentro del string vinieron saltos de línea reales, los limpiamos
+	// (esto es lo que te rompía con: invalid character '\n' in string literal)
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.TrimSpace(s)
+
+	if s == "" {
+		return nil, errors.New("payload string vacío")
+	}
+
+	if err := json.Unmarshal([]byte(s), &in); err != nil {
+		return nil, err
+	}
+	return &in, nil
 }

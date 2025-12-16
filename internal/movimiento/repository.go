@@ -3,6 +3,7 @@ package movimiento
 import (
 	"context"
 	"time"
+	"sort"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/nmarsollier/commongo/db"
@@ -62,6 +63,11 @@ func (r *repository) FindByUsuario(uid primitive.ObjectID) ([]*Movimiento, error
 		}
 		result = append(result, &mv)
 	}
+
+	// Ordenar por fechaCreacion DESC (más nuevo primero)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].FechaCreacion.After(result[j].FechaCreacion)
+	})
 
 	return result, nil
 }
