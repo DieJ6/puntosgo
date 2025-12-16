@@ -16,6 +16,7 @@ var validate = validator.New()
 type MovimientoRepository interface {
 	Insert(m *Movimiento) (*Movimiento, error)
 	FindByUsuario(uid primitive.ObjectID) ([]*Movimiento, error)
+	FindByUsuarioAfter(uid primitive.ObjectID, after time.Time) ([]*Movimiento, error)
 }
 
 type repository struct {
@@ -64,3 +65,30 @@ func (r *repository) FindByUsuario(uid primitive.ObjectID) ([]*Movimiento, error
 
 	return result, nil
 }
+
+func (r *repository) FindByUsuarioAfter(uid primitive.ObjectID, after time.Time) ([]*Movimiento, error) {
+	var result []*Movimiento
+
+	filter := bson.M{
+		"forK_id_usuario": uid,
+		"fechaCreacion":   bson.M{"$gt": after},
+	}
+
+	cur, err := r.collection.Find(context.Background(), filter)
+	if err != nil {
+		r.log.Error(err)
+		return nil, err
+	}
+	defer cur.Close(context.Background())
+
+	for cur.Next(context.Background()) {
+		var mv Movimiento
+		if err := cur.Decode(&mv); err != nil {
+			return nil, err
+		}
+		result = append(result, &mv)
+	}
+
+	return result, nil
+}
+

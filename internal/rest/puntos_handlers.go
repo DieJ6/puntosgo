@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/DieJ6/puntosgo/internal/di"
-	"github.com/DieJ6/puntosgo/internal/token"
 	"github.com/DieJ6/puntosgo/internal/usecases"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -15,14 +14,17 @@ type PointsHandlers struct {
 }
 
 func (h PointsHandlers) GetPoints(w http.ResponseWriter, r *http.Request) {
-	// Extraer userID del JWT
-	userID, err := token.ExtractUserID(r)
-	if err != nil {
-		http.Error(w, "token inválido", 401)
+	u, _ := r.Context().Value(ctxUser).(*AuthUser)
+	if u == nil || u.ID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	uid, _ := primitive.ObjectIDFromHex(userID)
+	uid, err := primitive.ObjectIDFromHex(u.ID)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	uc := usecases.ConsultarPuntosUC{
 		SaldoSrv: h.Inj.SaldoSrv,
@@ -31,9 +33,9 @@ func (h PointsHandlers) GetPoints(w http.ResponseWriter, r *http.Request) {
 
 	result, err := uc.Execute(uid)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }

@@ -13,40 +13,47 @@ type ConsultarPuntosUC struct {
 	MvSrv    movimiento.Service
 }
 
-type ConsultarPuntosOutput struct {
+type ConsultarPuntosResult struct {
 	Puntos            int       `json:"puntos"`
 	FechaModificacion time.Time `json:"fechaModificacion"`
 }
 
-func (uc *ConsultarPuntosUC) Execute(userID primitive.ObjectID) (*ConsultarPuntosOutput, error) {
-
-	s, err := uc.SaldoSrv.GetSaldoActual(userID)
-	if err != nil {
-		return nil, err
-	}
-	if s == nil {
-		// usuario sin saldo → iniciar en 0
-		s, err = uc.SaldoSrv.CrearSaldoInicial(userID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	movs, err := uc.MvSrv.GetByUsuario(userID)
+func (uc *ConsultarPuntosUC) Execute(uid primitive.ObjectID) (*ConsultarPuntosResult, error) {
+	// 1) saldo más reciente
+	s, err := uc.SaldoSrv.GetSaldoActual(uid)
 	if err != nil {
 		return nil, err
 	}
 
-	total := s.Monto
+	base := 0
+	ref := time.Time{}
 
-	for _, mv := range movs {
-		if mv.FechaCreacion.After(s.FechaModificacion) {
-			total += mv.Monto
+	if s != nil {
+		base = s.Monto
+		ref = s.FechaModificacion
+		if ref.IsZero() {
+			ref = s.FechaCreacion
 		}
 	}
 
-	return &ConsultarPuntosOutput{
+	// 2) movimientos posteriores al saldo
+	movs, err := uc.MvSrv.GetByUsuarioAfter(uid, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3) saldo + movimientos
+	total := base
+	for _, m := range movs {
+		total += m.Monto
+	}
+
+	if ref.IsZero() {
+		ref = time.Now()
+	}
+
+	return &ConsultarPuntosResult{
 		Puntos:            total,
-		FechaModificacion: s.FechaModificacion,
+		FechaModificacion: ref,
 	}, nil
 }
