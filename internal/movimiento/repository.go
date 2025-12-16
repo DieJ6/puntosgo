@@ -77,7 +77,6 @@ func (r *repository) FindByUsuarioAfter(uid primitive.ObjectID, after time.Time)
 
 	filter := bson.M{
 		"forK_id_usuario": uid,
-		"fechaCreacion":   bson.M{"$gt": after},
 	}
 
 	cur, err := r.collection.Find(context.Background(), filter)
@@ -92,8 +91,17 @@ func (r *repository) FindByUsuarioAfter(uid primitive.ObjectID, after time.Time)
 		if err := cur.Decode(&mv); err != nil {
 			return nil, err
 		}
-		result = append(result, &mv)
+
+		// solo posteriores a "after"
+		if mv.FechaCreacion.After(after) {
+			result = append(result, &mv)
+		}
 	}
+
+	// opcional: orden por fecha asc/desc (yo lo dejo ASC para sumar “cronológico”)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].FechaCreacion.Before(result[j].FechaCreacion)
+	})
 
 	return result, nil
 }

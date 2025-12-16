@@ -25,18 +25,21 @@ func (uc *ConsultarPuntosUC) Execute(uid primitive.ObjectID) (*ConsultarPuntosRe
 		return nil, err
 	}
 
-	base := 0
-	ref := time.Time{}
-
-	if s != nil {
-		base = s.Monto
-		ref = s.FechaModificacion
-		if ref.IsZero() {
-			ref = s.FechaCreacion
+	// Si no existe saldo, crear saldo inicial (0)
+	if s == nil {
+		s, err = uc.SaldoSrv.CrearSaldoInicial(uid)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	// 2) movimientos posteriores al saldo
+	base := s.Monto
+	ref := s.FechaModificacion
+	if ref.IsZero() {
+		ref = s.FechaCreacion
+	}
+
+	// 2) movimientos posteriores a la fecha del saldo
 	movs, err := uc.MvSrv.GetByUsuarioAfter(uid, ref)
 	if err != nil {
 		return nil, err
@@ -44,16 +47,16 @@ func (uc *ConsultarPuntosUC) Execute(uid primitive.ObjectID) (*ConsultarPuntosRe
 
 	// 3) saldo + movimientos
 	total := base
+	last := ref
 	for _, m := range movs {
 		total += m.Monto
-	}
-
-	if ref.IsZero() {
-		ref = time.Now()
+		if m.FechaCreacion.After(last) {
+			last = m.FechaCreacion
+		}
 	}
 
 	return &ConsultarPuntosResult{
 		Puntos:            total,
-		FechaModificacion: ref,
+		FechaModificacion: last,
 	}, nil
 }

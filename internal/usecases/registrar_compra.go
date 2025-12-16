@@ -6,6 +6,7 @@ import (
 	"github.com/DieJ6/puntosgo/internal/movimiento"
 	"github.com/DieJ6/puntosgo/internal/saldo"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type RegistrarCompraUC struct {
@@ -32,17 +33,18 @@ func (uc *RegistrarCompraUC) Ejecutar(input RegistrarCompraInput) error {
 
 	puntos := int(input.Monto / PESOS_POR_PUNTO)
 	if puntos <= 0 {
-		// si querés, podés permitir 0 y no registrar nada
 		return nil
 	}
 
-	// obtener saldo actual
+	// 1) Obtener saldo actual (si no existe, crearlo)
 	s, err := uc.SaldoSrv.GetSaldoActual(uid)
 	if err != nil {
-		// si no encontrás saldo, lo creás; cualquier otro error se propaga
+		// Sólo tratamos como "no existe" el ErrNoDocuments
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return err
+		}
 		s = nil
 	}
-
 	if s == nil {
 		s, err = uc.SaldoSrv.CrearSaldoInicial(uid)
 		if err != nil {
@@ -50,14 +52,16 @@ func (uc *RegistrarCompraUC) Ejecutar(input RegistrarCompraInput) error {
 		}
 	}
 
-	s.Monto += puntos
-	if _, err := uc.SaldoSrv.ActualizarSaldo(s); err != nil {
+	// 2) Registrar movimiento (primero)
+	if _, err := uc.MvSrv.Registrar(&movimiento.Movimiento{
+		Monto:         puntos,
+		ForKIdUsuario: uid,
+	}); err != nil {
 		return err
 	}
 
-	_, err = uc.MvSrv.Registrar(&movimiento.Movimiento{
-		Monto:         puntos,
-		ForKIdUsuario: uid,
-	})
+	// 3) Actualizar saldo (después)
+	s.Monto += puntos
+	_, err = uc.SaldoSrv.ActualizarSaldo(s)
 	return err
 }
