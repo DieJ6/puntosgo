@@ -28,7 +28,7 @@ func (h CategoryHandlers) CreateCategory(w http.ResponseWriter, r *http.Request)
 
 	eqID, err := primitive.ObjectIDFromHex(body.ForKIdEquivalencia)
 	if err != nil {
-		http.Error(w, "equivalencia inválida", 400)
+		http.Error(w, "Equivalencia inválida", 400)
 		return
 	}
 
@@ -56,63 +56,51 @@ func (h CategoryHandlers) AddArticle(w http.ResponseWriter, r *http.Request) {
 		IDArticulo  string `json:"id_Article"`
 	}
 
+	// 1) parse body
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if body.IDArticulo == "" {
-		http.Error(w, "id de producto inválido", 400)
+		http.Error(w, "Id de producto inválido", http.StatusBadRequest)
 		return
 	}
 
+	// 2) validar ObjectID categoría
 	catID, err := primitive.ObjectIDFromHex(body.IDCategoria)
 	if err != nil {
-		http.Error(w, "id de categoría inválido", 400)
+		http.Error(w, "Id de categoría inválido", http.StatusBadRequest)
 		return
 	}
 
-	// 1) La categoría debe existir
+	// 3) La categoría debe existir (precondición)
 	targetCat, err := h.Inj.CategorySrv.GetByID(catID)
 	if err != nil || targetCat == nil {
-		http.Error(w, "la categoría no existe", 404)
+		http.Error(w, "La categoría no existe", http.StatusNotFound)
 		return
 	}
 
-	// 2) Buscar en todas las categorías si el artículo ya está asignado
-	cats, err := h.Inj.CategoryRepo.FindAll()
+	// 4) UC: agrega pero primero valida que no esté asignado a otra categoría
+	uc := usecases.AgregarArticuloUC{
+		CategorySrv: h.Inj.CategorySrv,
+	}
+
+	err = uc.Execute(usecases.AgregarArticuloInput{
+		IDCategoria: catID,
+		IDArticulo:  body.IDArticulo,
+	})
 	if err != nil {
-		http.Error(w, "error buscando categorías", 500)
-		return
-	}
-
-	for _, c := range cats {
-		if c.ID == catID {
-			continue // es la misma categoría destino
+		if err == usecases.ErrArticuloYaAsignado {
+			http.Error(w, err.Error(), http.StatusConflict) // 409
+			return
 		}
-		// ¿está el id del producto en esta categoría?
-		for _, a := range c.Articulos {
-			if a == body.IDArticulo {
-				// Camino alternativo: ya está asignado → avisar (409)
-				w.WriteHeader(http.StatusConflict)
-				json.NewEncoder(w).Encode(map[string]any{
-					"Message":               "El artículo ya está asignado a otra categoría. Quitalo primero o elegí otra categoría.",
-					"categoria_existente":   c.ID.Hex(),
-					"categoria_existente_nombre": c.Nombre,
-				})
-				return
-			}
-		}
-	}
-
-	// 3) Agregar
-	if err := h.Inj.CategorySrv.AddArticulo(catID, body.IDArticulo); err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"Message": "Artículo agregado correctamente",
+		"message": "Artículo agregado correctamente",
 	})
 }
 
@@ -129,20 +117,20 @@ func (h CategoryHandlers) RemoveArticle(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if body.IDArticulo == "" {
-		http.Error(w, "id de producto inválido", 400)
+		http.Error(w, "Id de producto inválido", 400)
 		return
 	}
 
 	catID, err := primitive.ObjectIDFromHex(body.IDCategoria)
 	if err != nil {
-		http.Error(w, "id de categoría inválido", 400)
+		http.Error(w, "Id de categoría inválido", 400)
 		return
 	}
 
 	// categoría debe existir
 	cat, err := h.Inj.CategorySrv.GetByID(catID)
 	if err != nil || cat == nil {
-		http.Error(w, "la categoría no existe", 404)
+		http.Error(w, "La categoría no existe", 404)
 		return
 	}
 

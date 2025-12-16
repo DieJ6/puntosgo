@@ -16,34 +16,39 @@ type ctxKey string
 const ctxUser ctxKey = "auth_user"
 
 type AuthUser struct {
-	ID      string   `json:"id"`
-	Role    string   `json:"role"`
-	Rol     string   `json:"rol"`
-	Roles   []string `json:"roles"`
-	IsAdmin bool     `json:"is_admin"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Login       string   `json:"login"`
+	Permissions []string `json:"permissions"`
+	Enabled     bool     `json:"enabled"`
 }
 
 func isAdmin(u *AuthUser) bool {
-	if u == nil { return false }
-	if u.IsAdmin { return true }
-	r := strings.ToLower(u.Role)
-	if r == "" {
-		r = strings.ToLower(u.Rol)
+	if u == nil || !u.Enabled {
+		return false
 	}
-	if strings.Contains(r, "admin") { return true }
-	for _, rr := range u.Roles {
-		if strings.Contains(strings.ToLower(rr), "admin") { return true }
+	for _, p := range u.Permissions {
+		if strings.EqualFold(p, "admin") {
+			return true
+		}
 	}
 	return false
 }
+
 func isUser(u *AuthUser) bool {
-	if u == nil { return false }
-	if isAdmin(u) { return true } // admin también puede pasar como “logueado”
-	r := strings.ToLower(u.Role)
-	if r == "" {
-		r = strings.ToLower(u.Rol)
+	if u == nil || !u.Enabled {
+		return false
 	}
-	return strings.Contains(r, "user") || strings.Contains(r, "usuario")
+	// admin cuenta como usuario logueado
+	if isAdmin(u) {
+		return true
+	}
+	for _, p := range u.Permissions {
+		if strings.EqualFold(p, "user") {
+			return true
+		}
+	}
+	return false
 }
 
 func extractAuthHeader(r *http.Request) (rawHeader string, tokenOnly string, err error) {
