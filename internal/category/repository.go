@@ -20,6 +20,7 @@ type CategoryRepository interface {
 	FindByArticuloID(productID string) (*Category, error)
 	AddArticulo(catID primitive.ObjectID, productID string) error
 	RemoveArticulo(catID primitive.ObjectID, productID string) error
+	FindAll() ([]Category, error)
 }
 
 type categoryRepository struct {
@@ -121,3 +122,24 @@ func (r *categoryRepository) RemoveArticulo(catID primitive.ObjectID, productID 
 	}
 	return err
 }
+
+func (r *categoryRepository) FindAll() ([]Category, error) {
+	cur, err := r.collection.Find(context.Background(), bson.M{})
+	if err != nil {
+		r.log.Error(err)
+		return nil, err
+	}
+	defer cur.Close(context.Background())
+
+	var out []Category
+	for cur.Next(context.Background()) {
+		var c Category
+		if err := cur.Decode(&c); err != nil {
+			r.log.Error(err)
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+

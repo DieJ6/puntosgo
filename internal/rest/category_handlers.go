@@ -61,29 +61,61 @@ func (h CategoryHandlers) AddArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.IDArticulo == "" {
+		http.Error(w, "id de producto inválido", 400)
+		return
+	}
+
 	catID, err := primitive.ObjectIDFromHex(body.IDCategoria)
 	if err != nil {
 		http.Error(w, "id de categoría inválido", 400)
 		return
 	}
 
-	uc := usecases.AgregarArticuloUC{
-		CategorySrv: h.Inj.CategorySrv,
+	// 1) La categoría debe existir
+	targetCat, err := h.Inj.CategorySrv.GetByID(catID)
+	if err != nil || targetCat == nil {
+		http.Error(w, "la categoría no existe", 404)
+		return
 	}
 
-	err = uc.Execute(usecases.AgregarArticuloInput{
-		IDCategoria: catID,
-		IDArticulo:  body.IDArticulo,
-	})
+	// 2) Buscar en todas las categorías si el artículo ya está asignado
+	cats, err := h.Inj.CategoryRepo.FindAll()
 	if err != nil {
+		http.Error(w, "error buscando categorías", 500)
+		return
+	}
+
+	for _, c := range cats {
+		if c.ID == catID {
+			continue // es la misma categoría destino
+		}
+		// ¿está el id del producto en esta categoría?
+		for _, a := range c.Articulos {
+			if a == body.IDArticulo {
+				// Camino alternativo: ya está asignado → avisar (409)
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]any{
+					"Message":               "El artículo ya está asignado a otra categoría. Quitalo primero o elegí otra categoría.",
+					"categoria_existente":   c.ID.Hex(),
+					"categoria_existente_nombre": c.Nombre,
+				})
+				return
+			}
+		}
+	}
+
+	// 3) Agregar
+	if err := h.Inj.CategorySrv.AddArticulo(catID, body.IDArticulo); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Artículo agregado correctamente",
+		"Message": "Artículo agregado correctamente",
 	})
 }
+
 
 func (h CategoryHandlers) RemoveArticle(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -96,26 +128,32 @@ func (h CategoryHandlers) RemoveArticle(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if body.IDArticulo == "" {
+		http.Error(w, "id de producto inválido", 400)
+		return
+	}
+
 	catID, err := primitive.ObjectIDFromHex(body.IDCategoria)
 	if err != nil {
 		http.Error(w, "id de categoría inválido", 400)
 		return
 	}
 
-	uc := usecases.QuitarArticuloUC{
-		CategorySrv: h.Inj.CategorySrv,
+	// categoría debe existir
+	cat, err := h.Inj.CategorySrv.GetByID(catID)
+	if err != nil || cat == nil {
+		http.Error(w, "la categoría no existe", 404)
+		return
 	}
 
-	err = uc.Execute(usecases.QuitarArticuloInput{
-		IDCategoria: catID,
-		IDArticulo:  body.IDArticulo,
-	})
+	err = h.Inj.CategorySrv.RemoveArticulo(catID, body.IDArticulo)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Artículo removido correctamente",
+		"Message": "Artículo removido correctamente",
 	})
 }
+

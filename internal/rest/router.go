@@ -6,22 +6,24 @@ import (
 )
 
 func Router(r chi.Router, inj *di.Injector) {
+	// auth middleware global (carga usuario)
+	r.Use(RequireAuth(inj))
 
-    // Category
-    categoryHandlers := CategoryHandlers{Inj: inj}
-    r.Post("/v1/puntosPorCompra/categoria", categoryHandlers.CreateCategory)
-    r.Post("/v1/puntosPorCompra/categoria/addArticle", categoryHandlers.AddArticle)
-    r.Put("/v1/puntosPorCompra/categoria/delArticle", categoryHandlers.RemoveArticle)
+	// Category (ADMIN)
+	categoryHandlers := CategoryHandlers{Inj: inj}
+	r.With(RequireAdmin).Post("/v1/puntosPorCompra/categoria", categoryHandlers.CreateCategory)
+	r.With(RequireAdmin).Post("/v1/puntosPorCompra/categoria/addArticle", categoryHandlers.AddArticle)
+	r.With(RequireAdmin).Put("/v1/puntosPorCompra/categoria/delArticle", categoryHandlers.RemoveArticle)
 
-    // Points
-    pointsHandlers := PointsHandlers{Inj: inj}
-    r.Get("/v1/puntosPorCompra/misPuntos", pointsHandlers.GetPoints)
+	// Points (USER)
+	pointsHandlers := PointsHandlers{Inj: inj}
+	r.With(RequireUser).Get("/v1/puntosPorCompra/misPuntos", pointsHandlers.GetPoints)
 
-    // Movements
-    movHandlers := MovHandlers{Inj: inj}
-    r.Get("/v1/puntosPorCompra/misMovimientos", movHandlers.GetMovements)
+	// Movements (USER)
+	movHandlers := MovHandlers{Inj: inj}
+	r.With(RequireUser).Get("/v1/puntosPorCompra/misMovimientos", movHandlers.GetMovements)
 
-    // Async request trigger
-    compraHandlers := CompraHandlers{Inj: inj}
-    r.Post("/v1/puntosPorCompra/consultaCompra", compraHandlers.TriggerConsultaCompra)
+	// Consulta compra (USER)
+	compraHandlers := CompraHandlers{Inj: inj}
+	r.With(RequireUser).Post("/v1/puntosPorCompra/consultaCompra", compraHandlers.TriggerConsultaCompra)
 }
