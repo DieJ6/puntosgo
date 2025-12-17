@@ -6,10 +6,11 @@ import (
 )
 
 type Config struct {
-	Port      int
-	MongoURL  string
-	RabbitURL string
-	AuthURL   string
+	Port       int
+	MongoURL   string
+	RabbitURL  string
+	AuthURL    string
+	CatalogURL string
 }
 
 var config *Config
@@ -23,10 +24,11 @@ func Get() *Config {
 	port, _ := strconv.Atoi(portStr)
 
 	config = &Config{
-		Port:      port,
-		MongoURL:  getEnv("MONGO_URL", "mongodb://mongo:27017"),
-		RabbitURL: getEnv("RABBIT_URL", "amqp://rabbitmq:5672"),
-		AuthURL:   getEnv("AUTHGO_URL", "http://prod-auth-go:3000/v1/users/current"),
+		Port:       port,
+		MongoURL:   getEnv("MONGO_URL", "mongodb://mongo:27017"),
+		RabbitURL:  getEnv("RABBIT_URL", "amqp://rabbitmq:5672"),
+		AuthURL:    getEnv("AUTHGO_URL", "http://prod-auth-go:3000/v1/users/current"),
+		CatalogURL: getEnv("CATALOG_URL", "http://prod-cataloggo-go:3002"),
 	}
 
 	return config

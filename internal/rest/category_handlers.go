@@ -32,9 +32,14 @@ func (h CategoryHandlers) CreateCategory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	uc := usecases.CrearCategoriaUC{
-		CategorySrv: h.Inj.CategorySrv,
+	// Validar existencia
+	eq, err := h.Inj.EquivSrv.GetByID(eqID)
+	if err != nil || eq == nil {
+		http.Error(w, "La equivalencia no existe", http.StatusBadRequest)
+		return
 	}
+
+	uc := usecases.CrearCategoriaUC{ CategorySrv: h.Inj.CategorySrv }
 
 	cat, err := uc.Execute(usecases.CrearCategoriaInput{
 		Nombre:             body.Nombre,
@@ -67,21 +72,34 @@ func (h CategoryHandlers) AddArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2) validar ObjectID categoría
+	// 2) Validar existencia de articulo
+	authHeader := r.Header.Get("Authorization")
+
+	exists, err := h.Inj.Catalog.Exists(body.IDArticulo, authHeader)
+	if err != nil {
+		http.Error(w, "Error consultando catálogo", http.StatusBadGateway)
+		return
+	}
+	if !exists {
+		http.Error(w, "El artículo no existe", http.StatusBadRequest)
+		return
+	}
+
+	// 3) validar ObjectID categoría
 	catID, err := primitive.ObjectIDFromHex(body.IDCategoria)
 	if err != nil {
 		http.Error(w, "Id de categoría inválido", http.StatusBadRequest)
 		return
 	}
 
-	// 3) La categoría debe existir (precondición)
+	// 4) La categoría debe existir (precondición)
 	targetCat, err := h.Inj.CategorySrv.GetByID(catID)
 	if err != nil || targetCat == nil {
 		http.Error(w, "La categoría no existe", http.StatusNotFound)
 		return
 	}
 
-	// 4) UC: agrega pero primero valida que no esté asignado a otra categoría
+	// 5) UC: agrega pero primero valida que no esté asignado a otra categoría
 	uc := usecases.AgregarArticuloUC{
 		CategorySrv: h.Inj.CategorySrv,
 	}

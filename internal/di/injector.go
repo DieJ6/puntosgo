@@ -15,6 +15,8 @@ import (
 	"github.com/DieJ6/puntosgo/internal/movimiento"
 	"github.com/DieJ6/puntosgo/internal/rabbit"
 	"github.com/DieJ6/puntosgo/internal/saldo"
+	"github.com/DieJ6/puntosgo/internal/catalog"
+
 
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -35,6 +37,8 @@ type Injector struct {
 	EquivSrv    equivalencia.Service
 	MvSrv       movimiento.Service
 	SaldoSrv    saldo.Service
+
+	Catalog catalog.Client
 
 	AuthURL string
 }
@@ -73,6 +77,8 @@ func Initialize() *Injector {
 	var logger log.LogRusEntry
 
 	cfg := env.Get()
+
+	catClient := catalog.NewClient(cfg.CatalogURL)
 
 	// =====================
 	// RabbitMQ
@@ -147,6 +153,8 @@ func Initialize() *Injector {
 		EquivSrv:    eqSrv,
 		MvSrv:       mvSrv,
 		SaldoSrv:    sldSrv,
+
+		Catalog: catClient,
 
 		AuthURL: cfg.AuthURL,
 	}
