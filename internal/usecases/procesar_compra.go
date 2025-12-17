@@ -53,7 +53,7 @@ func (uc *ProcesarCompraUC) Consume(body []byte) error {
 	puntosTotalesAplicados := 0
 	faltanteTotal := 0.0
 
-	// ordenar productos por prioridad
+	// Ordenamos productos por prioridad
 	type ProductoEval struct {
 		ID        string
 		Precio    float64
@@ -64,7 +64,7 @@ func (uc *ProcesarCompraUC) Consume(body []byte) error {
 	var evals []ProductoEval
 
 	for _, p := range input.Productos {
-		cat, err := uc.CategorySrv.FindByArticulo(p.ID)
+		cat, err := uc.CategorySrv.FindByArticulo(p.ID) // Buscar la categoría del producto
 		if err != nil || cat == nil {
 			evals = append(evals, ProductoEval{
 				ID:        p.ID,
@@ -74,7 +74,7 @@ func (uc *ProcesarCompraUC) Consume(body []byte) error {
 			})
 			continue
 		}
-		eq, _ := uc.EquivSrv.GetByID(cat.ForKIdEquivalencia)
+		eq, _ := uc.EquivSrv.GetByID(cat.ForKIdEquivalencia) // Buscar equivalencia
 		evals = append(evals, ProductoEval{
 			ID:        p.ID,
 			Precio:    p.Precio,
@@ -84,14 +84,14 @@ func (uc *ProcesarCompraUC) Consume(body []byte) error {
 	}
 
 	sort.Slice(evals, func(i, j int) bool {
-		return evals[i].Prioridad < evals[j].Prioridad
+		return evals[i].Prioridad < evals[j].Prioridad // Ordenamos por prioridad
 	})
 
 	for i := 0; i < len(evals); i++ {
 		prod := evals[i]
 
 		if prod.Equiv == nil {
-			faltanteTotal += prod.Precio
+			faltanteTotal += prod.Precio // No hay equivalencia
 			continue
 		}
 
@@ -117,11 +117,11 @@ func (uc *ProcesarCompraUC) Consume(body []byte) error {
 		}
 	}
 
-	// actualizar saldo
+	// Actualizar saldo
 	s.Monto = puntosDisponibles
 	uc.SaldoSrv.ActualizarSaldo(s)
 
-	// registrar movimiento de salida de puntos
+	// Registrar movimiento de salida de puntos
 	_, _ = uc.MvSrv.Registrar(&movimiento.Movimiento{
 		Monto:         -puntosTotalesAplicados,
 		ForKIdUsuario: uid,
@@ -135,5 +135,5 @@ func (uc *ProcesarCompraUC) Consume(body []byte) error {
 	}
 
 	responseBody, _ := json.Marshal(result)
-	return uc.Publisher.Publish("informacion_compra", responseBody)
+	return uc.Publisher.Publish("informacion_compra", responseBody) // Enviamos el resultado a Rabbit
 }

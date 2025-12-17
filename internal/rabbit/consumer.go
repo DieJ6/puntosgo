@@ -13,11 +13,6 @@ import (
 	"github.com/DieJ6/puntosgo/internal/usecases"
 )
 
-const (
-	RkConsultaCompra  = "consulta_compra"
-	RkRegistrarCompra = "registrar_compra"
-)
-
 type Consumer struct {
 	conn             *amqp.Connection
 	log              log.LogRusEntry // lo dejamos pero NO lo usamos (puede ser nil)

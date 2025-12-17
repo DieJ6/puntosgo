@@ -36,6 +36,9 @@ func Start() {
     consumer := rabbit.NewConsumer(inj.Rabbit, inj.Log, procUC, regUC)
     go consumer.Start()
 
+    //resConsumer := rabbit.NewResultConsumer(inj.Rabbit, inj.Log)
+    //go resConsumer.Start()
+
     // ——— REST API ———
     r := chi.NewRouter()
 

@@ -1,15 +1,19 @@
 package rabbit
 
-import (
-	"github.com/streadway/amqp"
-)
+import "github.com/streadway/amqp"
 
 const (
-	ExchangeName = "puntos_exchange"
-	QueueName    = "puntos_queue"
+	ExchangeName      = "puntos_exchange"
+	QueueName         = "puntos_queue"
+	ResultQueueName   = "puntos_result_queue"
+
+	RkConsultaCompra      = "consulta_compra"
+	RkFaltanteCompra      = "faltante_compra"
+	RkInformacionCompra   = "informacion_compra"
+	RkRegistrarCompra     = "registrar_compra"
 )
 
-// Configura el exchange y la queue
+// Configura el exchange y las colas
 func Setup(conn *amqp.Connection) error {
 	ch, err := conn.Channel()
 	if err != nil {
@@ -17,12 +21,12 @@ func Setup(conn *amqp.Connection) error {
 	}
 	defer ch.Close()
 
-	// Declarar exchange tipo Direct
+	// Exchange Direct
 	if err := ch.ExchangeDeclare(
 		ExchangeName,
 		"direct",
-		true,  // durable
-		false, // auto-delete
+		true,
+		false,
 		false,
 		false,
 		nil,
@@ -30,36 +34,44 @@ func Setup(conn *amqp.Connection) error {
 		return err
 	}
 
-	// Declarar queue
-	_, err = ch.QueueDeclare(
+	// Cola principal (donde escucha puntosgo)
+	if _, err := ch.QueueDeclare(
 		QueueName,
-		true,  // durable
-		false, 
+		true,
+		false,
 		false,
 		false,
 		nil,
-	)
-	if err != nil {
+	); err != nil {
 		return err
 	}
 
-	// Bindings
-	routingKeys := []string{
-		"consulta_compra",
-		"faltante_compra",
-		"informacion_compra", // opcional, por si algún servicio escucha
+	// Cola de resultados (para informacion_compra)
+	if _, err := ch.QueueDeclare(
+		ResultQueueName,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return err
 	}
 
-	for _, key := range routingKeys {
-		if err := ch.QueueBind(
-			QueueName,
-			key,
-			ExchangeName,
-			false,
-			nil,
-		); err != nil {
+	// Binds de la cola principal
+	for _, key := range []string{
+		RkConsultaCompra,
+		RkFaltanteCompra,
+		RkRegistrarCompra,
+	} {
+		if err := ch.QueueBind(QueueName, key, ExchangeName, false, nil); err != nil {
 			return err
 		}
+	}
+
+	// Bind de resultados
+	if err := ch.QueueBind(ResultQueueName, RkInformacionCompra, ExchangeName, false, nil); err != nil {
+		return err
 	}
 
 	return nil
